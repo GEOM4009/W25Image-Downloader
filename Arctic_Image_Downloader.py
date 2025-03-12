@@ -37,9 +37,14 @@ def verify_credentials():
         print("3. You can reset the process by deleting the .netrc file and running again")
         sys.exit(1)
 
-def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=24):
+def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=5, resolution="both"):
     """
     Get MODIS imagery for a given bounding box and time range.
+    
+    Parameters:
+    - min_lon, min_lat, max_lon, max_lat: bounding box coordinates
+    - hours_ago: how far back to search for imagery
+    - resolution: "QKM" (250m), "HKM" (500m), or "both" to download both resolutions
     """
     # Calculate time range using timezone-aware datetime
     end_time = datetime.datetime.now(UTC)
@@ -49,40 +54,71 @@ def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=24):
     print(f"Time Range: From {start_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
     print(f"            To   {end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
     print(f"Area of interest: {abs(min_lon):.2f}°W, {min_lat:.2f}°N to {abs(max_lon):.2f}°W, {max_lat:.2f}°N")
+    print(f"Resolution: {'Both 250m and 500m' if resolution == 'both' else ('250m' if resolution == 'QKM' else '500m')}")
     
     all_results = []
+    result_types = []  # Store the resolution type for each result
     
-    # Search Terra MODIS
-    print("\nSearching Terra MODIS (MOD02QKM)...")
-    terra_results = earthaccess.search_data(
-        short_name="MOD02QKM",
-        temporal=(start_time, end_time),
-        bounding_box=(min_lon, min_lat, max_lon, max_lat)
-    )
-    if terra_results:
-        all_results.extend(terra_results)
-        print(f"Found {len(terra_results)} Terra images")
+    # List of products to search based on resolution parameter
+    products_to_search = []
+    if resolution == "QKM" or resolution == "both":
+        products_to_search.append(("MOD02QKM", "MYD02QKM", "250m"))
+    if resolution == "HKM" or resolution == "both":
+        products_to_search.append(("MOD02HKM", "MYD02HKM", "500m"))
     
-    # Search Aqua MODIS
-    print("Searching Aqua MODIS (MYD02QKM)...")
-    aqua_results = earthaccess.search_data(
-        short_name="MYD02QKM",
-        temporal=(start_time, end_time),
-        bounding_box=(min_lon, min_lat, max_lon, max_lat)
-    )
-    if aqua_results:
-        all_results.extend(aqua_results)
-        print(f"Found {len(aqua_results)} Aqua images")
+    # Search for each product type
+    for terra_product, aqua_product, res_desc in products_to_search:
+        # Search Terra MODIS
+        print(f"\nSearching Terra MODIS ({terra_product} - {res_desc})...")
+        terra_results = earthaccess.search_data(
+            short_name=terra_product,
+            temporal=(start_time, end_time),
+            bounding_box=(min_lon, min_lat, max_lon, max_lat)
+        )
+        if terra_results:
+            all_results.extend(terra_results)
+            # Add corresponding resolution info for each result
+            result_types.extend([terra_product] * len(terra_results))
+            print(f"Found {len(terra_results)} Terra {res_desc} images")
+        
+        # Search Aqua MODIS
+        print(f"Searching Aqua MODIS ({aqua_product} - {res_desc})...")
+        aqua_results = earthaccess.search_data(
+            short_name=aqua_product,
+            temporal=(start_time, end_time),
+            bounding_box=(min_lon, min_lat, max_lon, max_lat)
+        )
+        if aqua_results:
+            all_results.extend(aqua_results)
+            # Add corresponding resolution info for each result
+            result_types.extend([aqua_product] * len(aqua_results))
+            print(f"Found {len(aqua_results)} Aqua {res_desc} images")
     
-    return all_results
+    return all_results, result_types
 
-def download_and_process_image(granule, output_filename):
+def download_and_process_image(granule, output_filename, product_type):
     """
     Download and process a MODIS image with proper projection for Arctic regions.
+    
+    Parameters:
+    - granule: The DataGranule object to download
+    - output_filename: The base filename for the output file
+    - product_type: The product type (e.g., "MOD02QKM", "MYD02HKM")
     """
     os.makedirs("./downloads", exist_ok=True)
     
-    print(f"Downloading granule...")
+    # Extract resolution from product_type
+    resolution = "unknown"
+    if "QKM" in product_type:
+        resolution = "250m"
+    elif "HKM" in product_type:
+        resolution = "500m"
+    
+    # Add resolution to filename
+    base_name, ext = os.path.splitext(output_filename)
+    resolution_output_filename = f"{base_name}_{resolution}{ext}"
+    
+    print(f"Downloading {product_type} granule ({resolution})...")
     downloaded_files = earthaccess.download(granule, local_path="./downloads")
     hdf_file = None
     
@@ -107,12 +143,12 @@ def download_and_process_image(granule, output_filename):
         for i, subdataset in enumerate(subdatasets):
             print(f"{i + 1}: {subdataset[0]} - {subdataset[1]}")
         
-        # Get the first subdataset (EV_250_RefSB)
+        # Get the first subdataset (EV_250_RefSB for QKM or EV_500_RefSB for HKM)
         subdataset_path = subdatasets[0][0]
         
         # Create output file paths
-        temp_output = os.path.join("./downloads", "temp_" + output_filename)
-        final_output = os.path.join("./downloads", output_filename)
+        temp_output = os.path.join("./downloads", "temp_" + resolution_output_filename)
+        final_output = os.path.join("./downloads", resolution_output_filename)
         
         try:
             # Open the subdataset
@@ -159,9 +195,9 @@ def download_and_process_image(granule, output_filename):
             
             # Close datasets
             hdf_dataset = None
-            if subdataset:
+            if 'subdataset' in locals() and subdataset:
                 subdataset = None
-            if geoloc_dataset:
+            if 'geoloc_dataset' in locals() and geoloc_dataset:
                 geoloc_dataset = None
             
     else:
@@ -253,15 +289,17 @@ if __name__ == "__main__":
     }
     
     print("\nSearching for available imagery...")
-    available_images = get_modis_imagery(**aoi)
+    # Use "both" to download both QKM (250m) and HKM (500m) resolution images
+    available_images, product_types = get_modis_imagery(**aoi, resolution="both")
     
     # Process all available images
     if available_images:
         print(f"\nFound {len(available_images)} images. Processing all...")
-        for idx, image in enumerate(available_images):
+        for idx, (image, product_type) in enumerate(zip(available_images, product_types)):
             print(f"\nProcessing image {idx + 1} of {len(available_images)}...")
+            # Base filename without resolution - resolution will be added in the function
             output_filename = f"prince_of_wales_image_{idx + 1}.tiff"
-            download_and_process_image(image, output_filename)
+            download_and_process_image(image, output_filename, product_type)
         
         # Clean up after all processing is complete
         cleanup_files()
