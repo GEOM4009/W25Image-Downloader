@@ -7,6 +7,7 @@ import sys
 from osgeo import gdal, osr, gdalconst
 import os
 import numpy as np
+import glob
 
 def verify_credentials():
     """
@@ -83,6 +84,7 @@ def download_and_process_image(granule, output_filename):
     
     print(f"Downloading granule...")
     downloaded_files = earthaccess.download(granule, local_path="./downloads")
+    hdf_file = None
     
     if downloaded_files:
         print(f"Processing image...")
@@ -155,8 +157,18 @@ def download_and_process_image(granule, output_filename):
             if os.path.exists(temp_output):
                 os.remove(temp_output)
             
+            # Close datasets
+            hdf_dataset = None
+            if subdataset:
+                subdataset = None
+            if geoloc_dataset:
+                geoloc_dataset = None
+            
     else:
         print("Failed to download image.")
+    
+    # Return the HDF file path for later cleanup
+    return hdf_file
 
 def verify_projection(filename):
     """
@@ -185,10 +197,48 @@ def verify_projection(filename):
         stats = band.GetStatistics(True, True)
         print(f"Band statistics - Min: {stats[0]}, Max: {stats[1]}, Mean: {stats[2]}, StdDev: {stats[3]}")
         
+        # Close the dataset
         dataset = None
         
     except Exception as e:
         print(f"Error reading projection information: {str(e)}")
+
+def cleanup_files():
+    """
+    Remove all unnecessary files, keeping only the TIFF files.
+    """
+    print("\nCleaning up temporary files...")
+    
+    # Remove all HDF files
+    hdf_files = glob.glob('./downloads/*.hdf')
+    for file in hdf_files:
+        try:
+            os.remove(file)
+            print(f"Removed: {file}")
+        except Exception as e:
+            print(f"Failed to remove {file}: {str(e)}")
+    
+    # Remove all .aux.xml files
+    aux_files = glob.glob('./downloads/*.aux.xml')
+    for file in aux_files:
+        try:
+            os.remove(file)
+            print(f"Removed: {file}")
+        except Exception as e:
+            print(f"Failed to remove {file}: {str(e)}")
+    
+    # Remove any other non-TIFF files that might be generated
+    all_files = glob.glob('./downloads/*')
+    for file in all_files:
+        if not file.lower().endswith('.tiff') and not file.lower().endswith('.tif'):
+            try:
+                if os.path.isfile(file):
+                    os.remove(file)
+                    print(f"Removed: {file}")
+            except Exception as e:
+                print(f"Failed to remove {file}: {str(e)}")
+    
+    print("Cleanup complete! Only TIFF files remain.")
 
 if __name__ == "__main__":
     # Verify credentials first
@@ -212,5 +262,14 @@ if __name__ == "__main__":
             print(f"\nProcessing image {idx + 1} of {len(available_images)}...")
             output_filename = f"prince_of_wales_image_{idx + 1}.tiff"
             download_and_process_image(image, output_filename)
+        
+        # Clean up after all processing is complete
+        cleanup_files()
+        
+        # Report on remaining files
+        tiff_files = glob.glob('./downloads/*.tiff') + glob.glob('./downloads/*.tif')
+        print(f"\nProcessing complete. {len(tiff_files)} TIFF files remain:")
+        for tiff in tiff_files:
+            print(f"- {os.path.basename(tiff)}")
     else:
         print("\nNo images available to process.")
