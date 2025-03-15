@@ -294,10 +294,44 @@ def create_composite(qkm_file, hkm_file, output_filename):
         temp_dir = "./downloads/temp"
         os.makedirs(temp_dir, exist_ok=True)
 
-        # Locate processed QKM and HKM files
-        qkm_processed = os.path.join("./downloads", qkm_file)
-        hkm_processed = os.path.join("./downloads", hkm_file)
 
+        # More robust file finding logic
+        qkm_basename = os.path.basename(qkm_file)
+        hkm_basename = os.path.basename(hkm_file)
+        
+        # List all files in downloads directory
+        download_files = os.listdir("./downloads")
+
+
+        # Find files with more flexible matching
+        qkm_matches = [f for f in download_files if (f.endswith("_250m.tiff") or f.endswith("_250m.tif")) and 
+                       (qkm_basename in f or (f.startswith("prince_of_wales") and "_QKM" in f))]
+        
+        hkm_matches = [f for f in download_files if (f.endswith("_500m.tiff") or f.endswith("_500m.tif")) and 
+                       (hkm_basename in f or (f.startswith("prince_of_wales") and "_HKM" in f))]
+        
+        
+         # Debug output to help diagnose issues
+        print(f"Looking for QKM file containing '{qkm_basename}' and ending with '_250m.tiff/tif'")
+        print(f"Looking for HKM file containing '{hkm_basename}' and ending with '_500m.tiff/tif'")
+        print(f"Available files in downloads directory: {download_files}")
+        print(f"QKM matches found: {qkm_matches}")
+        print(f"HKM matches found: {hkm_matches}")
+ 
+        # Check if we found matching files
+        if not qkm_matches:
+            print("No matching QKM (250m) file found. Cannot create composite.")
+            return None
+     
+        if not hkm_matches:
+            print("No matching HKM (500m) file found. Cannot create composite.")
+            return None
+
+
+        # Use the first match found
+        qkm_processed = os.path.join("./downloads", qkm_matches[0])
+        hkm_processed = os.path.join("./downloads", hkm_matches[0])
+  
         print(f"Using QKM file: {qkm_processed}")
         print(f"Using HKM file: {hkm_processed}")
 
@@ -316,8 +350,11 @@ def create_composite(qkm_file, hkm_file, output_filename):
         # Define output path
         composite_path = os.path.join("./downloads", output_filename)
 
-        # Resample HKM to match QKM resolution
+        # Create temporary resampled HKM bands at QKM resolution
         temp_hkm_resampled = os.path.join(temp_dir, "hkm_resampled.tif")
+        
+        
+        # Resample HKM to match QKM resolution
         warp_options = gdal.WarpOptions(
             format='GTiff',
             width=target_width,
@@ -343,6 +380,7 @@ def create_composite(qkm_file, hkm_file, output_filename):
     except Exception as e:
         print(f"Error in create_composite: {e}")
         return None
+
 
 
 def apply_rgb(qkm_processed, hkm_processed, composite_path, target_proj, target_geotrans, target_width, target_height):
