@@ -347,7 +347,7 @@ def create_composite(qkm_file, hkm_file, output_filename):
 
 def apply_rgb(qkm_processed, hkm_processed, composite_path, target_proj, target_geotrans, target_width, target_height):
     """
-    Reads and applies RGB bands to create a true-color composite.
+    Reads and applies RGB bands to create a true colour composite.
     """
     try:
         print("Applying RGB bands...")
@@ -407,12 +407,12 @@ def apply_rgb(qkm_processed, hkm_processed, composite_path, target_proj, target_
         print(f"Error in apply_rgb: {e}")
 
 
-def apply_false_color(qkm_processed, hkm_processed, composite_path, target_proj, target_geotrans, target_width, target_height):
+def apply_false_colour(qkm_processed, hkm_processed, composite_path, target_proj, target_geotrans, target_width, target_height):
     """
-    Reads and applies false-color bands (Blue, SWIR2, SWIR3) to create a false-color composite.
+    Reads and applies false colour bands (Blue, SWIR2, SWIR3) to create a false colour composite.
     """
     try:
-        print("Applying False-Color (Blue, SWIR2, SWIR3) bands...")
+        print("Applying False Colour (Blue, SWIR2, SWIR3) bands...")
 
         # Create output dataset with an alpha channel
         driver = gdal.GetDriverByName("GTiff")
@@ -435,7 +435,7 @@ def apply_false_color(qkm_processed, hkm_processed, composite_path, target_proj,
             swir2_array = hkm_ds.GetRasterBand(6).ReadAsArray()  # Band 6 (SWIR2)
             swir3_array = hkm_ds.GetRasterBand(7).ReadAsArray()  # Band 7 (SWIR3)
         else:
-            print("HKM file doesn't have enough bands for false-color")
+            print("HKM file doesn't have enough bands for false colour")
             return
 
         hkm_ds = None
@@ -450,10 +450,10 @@ def apply_false_color(qkm_processed, hkm_processed, composite_path, target_proj,
         composite_ds.GetRasterBand(4).WriteArray(alpha_band)
 
         composite_ds = None
-        print("False-color composite created successfully!")
+        print("False colour composite created successfully!")
 
     except Exception as e:
-        print(f"Error in apply_false_color: {e}")
+        print(f"Error in apply_false_colour: {e}")
 
 
 ####
@@ -581,11 +581,11 @@ if __name__ == "__main__":
     # Use "both" to download both QKM (250m) and HKM (500m) resolution images
     available_images, product_types = get_modis_imagery(**aoi, resolution="both")
     
-    # Find matching QKM and HKM granules for true color composites
+    # Find matching QKM and HKM granules for true colour composites
     matching_pairs = find_matching_granules(available_images, product_types)
     
     if matching_pairs:
-        print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for true color composites")
+        print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for true colour composites")
         
         # Process all available images and keep track of downloaded files
         downloaded_files = {}  # Store paths to downloaded files by granule index
@@ -611,16 +611,16 @@ if __name__ == "__main__":
             
         
             # Generate composites
-            true_color_output = f"prince_of_wales_truecolor_{i+1}.tiff"
-            false_color_output = f"prince_of_wales_falsecolor_{i+1}.tiff"
+            true_colour_output = f"prince_of_wales_truecolour_{i+1}.tiff"
+            false_colour_output = f"prince_of_wales_falsecolour_{i+1}.tiff"
         
-            composite_data = create_composite(qkm_hdf_file, hkm_hdf_file, true_color_output)
+            composite_data = create_composite(qkm_hdf_file, hkm_hdf_file, true_colour_output)
             if composite_data:
-                apply_rgb(*composite_data)  # Generate True Color Composite
+                apply_rgb(*composite_data)  # Generate True Colour Composite
 
-            composite_data_false = create_composite(qkm_hdf_file, hkm_hdf_file, false_color_output)
+            composite_data_false = create_composite(qkm_hdf_file, hkm_hdf_file, false_colour_output)
             if composite_data_false:
-                apply_false_color(*composite_data_false)  # Generate False Color Composite
+                apply_false_colour(*composite_data_false)  # Generate False Colour Composite
 
         
         # Clean up after all processing is complete
@@ -633,7 +633,7 @@ if __name__ == "__main__":
             print(f"- {os.path.basename(tiff)}")
     
     elif available_images:
-        print("\nFound individual images but no matching QKM/HKM pairs for true color composites.")
+        print("\nFound individual images but no matching QKM/HKM pairs for true colour composites.")
         print("Will process individual images instead...")
         
         # Process all available images
