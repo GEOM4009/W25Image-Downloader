@@ -11,7 +11,12 @@ def check_and_install_dependencies():
         'rasterio',
         'geopandas',
         'requests',
-        'shapely'
+        'shapely',
+        # Additional dependencies for Arctic_Image_Downloader.py
+        'earthaccess',
+        'numpy',
+        'gdal',
+        'osgeo'
     ]
     
     installed = []
@@ -25,6 +30,16 @@ def check_and_install_dependencies():
         except ImportError:
             print(f"✗ {package} is not installed. Attempting to install...")
             try:
+                # Special case for osgeo which is part of GDAL
+                if package == 'osgeo':
+                    if 'gdal' in installed:
+                        print(f"✓ {package} is available via GDAL installation")
+                        installed.append(package)
+                        continue
+                    else:
+                        print(f"✗ {package} requires GDAL. Skipping explicit installation...")
+                        continue
+                
                 subprocess.check_call([sys.executable, "-m", "pip", "install", package])
                 print(f"✓ Successfully installed {package}")
                 installed.append(package)
@@ -44,5 +59,12 @@ if __name__ == "__main__":
             print(f"- {package}")
         print("\nPlease try installing them manually using:")
         print("pip install package_name")
+        
+        # GDAL installation hint
+        if 'gdal' in failed or 'osgeo' in failed:
+            print("\nNote: GDAL can be difficult to install with pip.")
+            print("On Windows, try: pip install GDAL-binaries")
+            print("On macOS, try: brew install gdal && pip install gdal")
+            print("On Linux, try: sudo apt-get install libgdal-dev && pip install gdal==<matching-version>")
     else:
         print("\nAll dependencies are installed successfully!")
