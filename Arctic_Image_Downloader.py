@@ -8,6 +8,8 @@ from osgeo import gdal, osr, gdalconst
 import os
 import numpy as np
 import glob
+gdal.DontUseExceptions()
+
 
 def verify_credentials():
     """
@@ -48,7 +50,7 @@ def verify_credentials():
         print("3. You can reset the process by deleting the .netrc file and running again")
         sys.exit(1)
 
-def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=1, resolution="both"):
+def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=5, resolution="both"):
     """
     Get MODIS imagery for a given bounding box and time range.
     
@@ -547,16 +549,13 @@ def create_true_color_composite(qkm_file, hkm_file, output_filename):
         expanded_composite_path = os.path.join("./downloads", "expanded_" + output_filename)
         
         print("Creating expanded composite with full extent...")
-        expanded_options = gdal.WarpOptions(
-            format='GTiff',
-            srcNodata=0,
-            dstNodata=0,
-            multithread=True,
-            resampleAlg=gdal.GRA_NearestNeighbour,
-            options=['ALPHA=YES', 'COMPRESS=LZW']
-        )
-        
-        gdal.Warp(expanded_composite_path, composite_path, options=expanded_options)
+        gdal.Warp(expanded_composite_path, composite_path, 
+          format='GTiff',
+          srcNodata=0,
+          dstNodata=0,
+          multithread=True,
+          resampleAlg=gdal.GRA_NearestNeighbour,
+          creationOptions=['ALPHA=YES', 'COMPRESS=LZW'])
         
         print(f"True-color composite saved to: {composite_path}")
         print(f"Expanded true-color composite saved to: {expanded_composite_path}")
