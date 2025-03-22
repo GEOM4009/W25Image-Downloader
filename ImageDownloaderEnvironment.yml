@@ -1,0 +1,17 @@
+name: ImageDownloader
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python
+  - numpy
+  - rasterio
+  - geopandas
+  - requests
+  - shapely
+  - earthaccess
+  - gdal
+  - pip
+  - pip:
+    - earthdata
