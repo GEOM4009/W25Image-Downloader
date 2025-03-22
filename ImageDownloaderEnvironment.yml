@@ -1,4 +1,4 @@
-name: ImageDownloader
+name: geom
 
 channels:
   - conda-forge
@@ -12,6 +12,7 @@ dependencies:
   - shapely
   - earthaccess
   - gdal
+  - libgdal-hdf4  # Added HDF4 driver for GDAL
   - pip
   - pip:
     - earthdata
