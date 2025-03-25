@@ -1,4 +1,4 @@
-name: geom
+name: image_downloader  
 
 channels:
   - conda-forge
