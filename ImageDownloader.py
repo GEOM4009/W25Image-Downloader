@@ -37,7 +37,7 @@ def verify_credentials():
         print("3. You can reset the process by deleting the .netrc file and running again")
         sys.exit(1)
 
-def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=24, resolution="both"):
+def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=6, resolution="both"):
     """
     Get MODIS imagery for a given bounding box and time range.
     
