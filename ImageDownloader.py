@@ -8,24 +8,11 @@ from osgeo import gdal, osr, gdalconst
 import os
 import numpy as np
 import glob
-gdal.DontUseExceptions()
-
 
 def verify_credentials():
     """
-    Verify NASA Earthdata credentials and ensure successful login.
-    
-    This function attempts to authenticate with NASA Earthdata using stored
-    credentials and performs a test search to confirm the authentication works.
-    If authentication fails, it provides detailed troubleshooting steps.
-    
-    Returns:
-        earthaccess.Auth: Authenticated earthaccess object
-    
-    Raises:
-        SystemExit: If authentication fails
-    
-    Author: Leo
+    Verify NASA Earthdata credentials and ensure successful login
+    Returns authenticated earthaccess object or exits if authentication fails
     """
     try:
         print("Attempting to authenticate with NASA Earthdata...")
@@ -50,28 +37,14 @@ def verify_credentials():
         print("3. You can reset the process by deleting the .netrc file and running again")
         sys.exit(1)
 
-def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=6, resolution="both"):
+def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=24, resolution="both"):
     """
     Get MODIS imagery for a given bounding box and time range.
     
-    This function searches for MODIS imagery from both Terra and Aqua satellites
-    within the specified geographic area and time window. It supports searching for
-    images at different resolutions based on the user's preference.
-    
     Parameters:
-        min_lon (float): Minimum longitude (western boundary) of bounding box
-        min_lat (float): Minimum latitude (southern boundary) of bounding box
-        max_lon (float): Maximum longitude (eastern boundary) of bounding box
-        max_lat (float): Maximum latitude (northern boundary) of bounding box
-        hours_ago (int): How far back in time to search for imagery, in hours
-        resolution (str): "QKM" (250m), "HKM" (500m), or "both" to download both resolutions
-    
-    Returns:
-        tuple: (all_results, result_types) where:
-            - all_results: List of DataGranule objects matching the search criteria
-            - result_types: List of product types corresponding to each granule
-    
-    Author: Leo
+    - min_lon, min_lat, max_lon, max_lat: bounding box coordinates
+    - hours_ago: how far back to search for imagery
+    - resolution: "QKM" (250m), "HKM" (500m), or "both" to download both resolutions
     """
     # Calculate time range using timezone-aware datetime
     end_time = datetime.datetime.now(UTC)
@@ -123,26 +96,15 @@ def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=6, resolutio
     
     return all_results, result_types
 
+
 def download_and_process_image(granule, output_filename, product_type):
     """
     Download and process a MODIS image with proper projection for Arctic regions.
     
-    This function downloads a specified MODIS granule, extracts the relevant
-    subdataset, and reprojects it to an Arctic Polar Stereographic projection 
-    (EPSG:3995) suitable for Arctic region analysis. The process includes 
-    handling geolocation information to ensure accurate spatial representation.
-    
     Parameters:
-        granule (DataGranule): The DataGranule object to download
-        output_filename (str): The base filename for the output file
-        product_type (str): The product type (e.g., "MOD02QKM", "MYD02HKM")
-    
-    Returns:
-        tuple: (hdf_file, resolution_output_filename) where:
-            - hdf_file: Path to the downloaded HDF file
-            - resolution_output_filename: Path to the processed output file
-    
-    Author: Leo
+    - granule: The DataGranule object to download
+    - output_filename: The base filename for the output file
+    - product_type: The product type (e.g., "MOD02QKM", "MYD02HKM")
     """
     os.makedirs("./downloads", exist_ok=True)
     
@@ -198,6 +160,9 @@ def download_and_process_image(granule, output_filename, product_type):
             
             # Get geolocation datasets (latitude and longitude)
             geoloc_dataset = gdal.Open(hdf_file)
+            print(f"Latitude subdataset: {geoloc_dataset.GetSubDatasets()[0][0]}")
+            print(f"Longitude subdataset: {geoloc_dataset.GetSubDatasets()[1][0]}")
+
             latitude = geoloc_dataset.GetSubDatasets()[0][0]  # Assuming lat is first
             longitude = geoloc_dataset.GetSubDatasets()[1][0]  # Assuming lon is second
             
@@ -247,22 +212,16 @@ def download_and_process_image(granule, output_filename, product_type):
 
 def extract_band_from_hdf(hdf_file, band_name, band_index, output_file):
     """
-    Extract a specific band from an HDF file.
-    
-    This function extracts a single band from a MODIS HDF file subdataset,
-    creating a standalone GeoTIFF file. The function preserves geospatial 
-    information from the source dataset when available.
+    Extract a specific band from an HDF file
     
     Parameters:
-        hdf_file (str): Path to the HDF file
-        band_name (str): Name of the subdataset (e.g., "EV_250_RefSB" or "EV_500_RefSB")
-        band_index (int): The 0-based index of the band within the subdataset
-        output_file (str): Path to save the extracted band
+    - hdf_file: Path to the HDF file
+    - band_name: Name of the subdataset (e.g., "EV_250_RefSB" or "EV_500_RefSB")
+    - band_index: The 0-based index of the band within the subdataset
+    - output_file: Path to save the extracted band
     
     Returns:
-        str or None: Path to the output file if successful, None if failed
-    
-    Author: Alana
+    - Path to the output file or None if failed
     """
     try:
         # Open the HDF file
@@ -323,41 +282,12 @@ def extract_band_from_hdf(hdf_file, band_name, band_index, output_file):
         return None
 
 
+
 def create_composite(qkm_file, hkm_file, output_filename):
-    '''
+    """
     Create a composite image using bands from QKM and HKM MODIS files.
     Returns the composite dataset path if successful, else None.
-
-    Parameters
-    ----------
-    qkm_file : TYPE
-        DESCRIPTION.
-    hkm_file : TYPE
-        DESCRIPTION.
-    output_filename : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    qkm_processed : TYPE
-        DESCRIPTION.
-    temp_hkm_resampled : TYPE
-        DESCRIPTION.
-    composite_path : TYPE
-        DESCRIPTION.
-    target_proj : TYPE
-        DESCRIPTION.
-    target_geotrans : TYPE
-        DESCRIPTION.
-    target_width : TYPE
-        DESCRIPTION.
-    target_height : TYPE
-        DESCRIPTION.
-        
-    
-    Author: Alana
-    '''
-    
+    """
     try:
         print("\nCreating composite image...")
 
@@ -455,33 +385,9 @@ def create_composite(qkm_file, hkm_file, output_filename):
 
 
 def apply_rgb(qkm_processed, hkm_processed, composite_path, target_proj, target_geotrans, target_width, target_height):
-    '''
+    """
     Reads and applies RGB bands to create a true colour composite.
-
-    Parameters
-    ----------
-    qkm_processed : TYPE
-        DESCRIPTION.
-    hkm_processed : TYPE
-        DESCRIPTION.
-    composite_path : TYPE
-        DESCRIPTION.
-    target_proj : TYPE
-        DESCRIPTION.
-    target_geotrans : TYPE
-        DESCRIPTION.
-    target_width : TYPE
-        DESCRIPTION.
-    target_height : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    None.
-
-    Author: Alana
-    '''
-    
+    """
     try:
         print("Applying RGB bands...")
 
@@ -541,34 +447,9 @@ def apply_rgb(qkm_processed, hkm_processed, composite_path, target_proj, target_
 
 
 def apply_false_colour(qkm_processed, hkm_processed, composite_path, target_proj, target_geotrans, target_width, target_height):
-    '''
+    """
     Reads and applies false colour bands (Blue, SWIR2, SWIR3) to create a false colour composite.
-
-    Parameters
-    ----------
-    qkm_processed : TYPE
-        DESCRIPTION.
-    hkm_processed : TYPE
-        DESCRIPTION.
-    composite_path : TYPE
-        DESCRIPTION.
-    target_proj : TYPE
-        DESCRIPTION.
-    target_geotrans : TYPE
-        DESCRIPTION.
-    target_width : TYPE
-        DESCRIPTION.
-    target_height : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    None.
-
-    Author: Alana
-    '''
- 
-
+    """
     try:
         print("Applying False Colour (Blue, SWIR2, SWIR3) bands...")
 
@@ -615,20 +496,9 @@ def apply_false_colour(qkm_processed, hkm_processed, composite_path, target_proj
 
 
 
-
-
 def verify_projection(filename):
     """
     Verify the projection of a processed image.
-    
-    This function opens a processed GeoTIFF file and inspects its projection
-    information, geotransform, dimensions, and statistics to verify
-    that the reprojection was successful and the data is valid.
-    
-    Parameters:
-        filename (str): Path to the GeoTIFF file to verify
-    
-    Author: Zack
     """
     try:
         dataset = gdal.Open(filename)
@@ -663,15 +533,8 @@ def cleanup_files(keep_original=False):
     """
     Remove all unnecessary files, keeping only the TIFF files.
     
-    This function cleans up temporary and intermediate files created during 
-    processing. By default, it removes all HDF files and auxiliary files,
-    keeping only the final TIFF products. This helps manage disk space
-    especially when processing multiple images.
-    
     Parameters:
-        keep_original (bool): If True, keep original HDF files, otherwise remove them
-    
-    Author: Zack
+    - keep_original: If True, keep original HDF files, otherwise remove them
     """
     print("\nCleaning up temporary files...")
     
@@ -710,22 +573,14 @@ def cleanup_files(keep_original=False):
 
 def find_matching_granules(available_images, product_types):
     """
-    Find matching QKM and HKM granules that can be used for true color composites.
-    
-    This function pairs 250m (QKM) and 500m (HKM) granules from the same satellite
-    (Terra or Aqua) that can be combined to create true color composite images.
-    The matching is based on the product type prefixes ("MOD" for Terra and "MYD" 
-    for Aqua) to ensure the granules are from the same satellite pass.
+    Find matching QKM and HKM granules that can be used for true color composites
     
     Parameters:
-        available_images (list): List of DataGranule objects
-        product_types (list): List of product types corresponding to each granule
+    - available_images: List of DataGranule objects
+    - product_types: List of product types corresponding to each granule
     
     Returns:
-        list: List of tuples (qkm_index, hkm_index) for matching granules that
-              can be used to create true color composites
-    
-    Author: Alana
+    - List of tuples (qkm_index, hkm_index) for matching granules
     """
     matches = []
     qkm_indices = [i for i, pt in enumerate(product_types) if "QKM" in pt]
@@ -748,17 +603,6 @@ def find_matching_granules(available_images, product_types):
     return matches
 
 if __name__ == "__main__":
-    """
-    Main execution block for Arctic Image Downloader.
-    
-    This script downloads and processes MODIS imagery for the Arctic region,
-    specifically focusing on Prince of Wales Island. It handles downloading both
-    250m (QKM) and 500m (HKM) resolution imagery, processes them into the
-    Arctic Polar Stereographic projection, and creates true color composites
-    when matching image pairs are available.
-    
-    Author: Zack
-    """
     # Verify credentials first
     auth = verify_credentials()
     
@@ -774,11 +618,11 @@ if __name__ == "__main__":
     # Use "both" to download both QKM (250m) and HKM (500m) resolution images
     available_images, product_types = get_modis_imagery(**aoi, resolution="both")
     
-    # Find matching QKM and HKM granules for true color composites
+    # Find matching QKM and HKM granules for true colour composites
     matching_pairs = find_matching_granules(available_images, product_types)
     
     if matching_pairs:
-        print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for true color composites")
+        print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for true colour composites")
         
         # Process all available images and keep track of downloaded files
         downloaded_files = {}  # Store paths to downloaded files by granule index
@@ -802,9 +646,19 @@ if __name__ == "__main__":
             )
             downloaded_files[hkm_idx] = hkm_hdf_file
             
-            # Create true color composite
-            composite_output = f"prince_of_wales_truecolor_{i+1}.tiff"
-            create_true_color_composite(qkm_hdf_file, hkm_hdf_file, composite_output)
+        
+            # Generate composites
+            true_colour_output = f"prince_of_wales_truecolour_{i+1}.tiff"
+            false_colour_output = f"prince_of_wales_falsecolour_{i+1}.tiff"
+        
+            composite_data = create_composite(qkm_hdf_file, hkm_hdf_file, true_colour_output)
+            if composite_data:
+                apply_rgb(*composite_data)  # Generate True Colour Composite
+
+            composite_data_false = create_composite(qkm_hdf_file, hkm_hdf_file, false_colour_output)
+            if composite_data_false:
+                apply_false_colour(*composite_data_false)  # Generate False Colour Composite
+
         
         # Clean up after all processing is complete
         cleanup_files(keep_original=False)
@@ -816,7 +670,7 @@ if __name__ == "__main__":
             print(f"- {os.path.basename(tiff)}")
     
     elif available_images:
-        print("\nFound individual images but no matching QKM/HKM pairs for true color composites.")
+        print("\nFound individual images but no matching QKM/HKM pairs for true colour composites.")
         print("Will process individual images instead...")
         
         # Process all available images
@@ -837,3 +691,6 @@ if __name__ == "__main__":
             print(f"- {os.path.basename(tiff)}")
     else:
         print("\nNo images available to process.")
+
+
+
