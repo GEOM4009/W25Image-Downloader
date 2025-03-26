@@ -330,7 +330,6 @@ def create_true_color_composite(qkm_file, hkm_file, output_filename):
     to create a true-color composite image. The process includes resampling the
     500m bands to match the higher 250m resolution, performing appropriate scaling 
     and color balancing, and handling transparency for areas with no valid data.
-    The function creates both standard and expanded versions of the composite.
     
     Parameters:
         qkm_file (str): Path to the QKM (250m) MODIS file
@@ -543,22 +542,8 @@ def create_true_color_composite(qkm_file, hkm_file, output_filename):
         
         # Close dataset
         composite_ds = None
-        
-        # Create another version with expanded extent if needed
-        # This ensures we get the full area without clipping
-        expanded_composite_path = os.path.join("./downloads", "expanded_" + output_filename)
-        
-        print("Creating expanded true colour composite with full extent...")
-        gdal.Warp(expanded_composite_path, composite_path, 
-          format='GTiff',
-          srcNodata=0,
-          dstNodata=0,
-          multithread=True,
-          resampleAlg=gdal.GRA_NearestNeighbour,
-          creationOptions=['ALPHA=YES', 'COMPRESS=LZW'])
-        
+           
         print(f"True-color composite saved to: {composite_path}")
-        print(f"Expanded true-color composite saved to: {expanded_composite_path}")
         
         # Clean up temporary files
         print("Cleaning up temporary files...")
@@ -594,7 +579,6 @@ def create_false_colour_composite(qkm_file, hkm_file, output_filename):
     to create a false-color composite image. The process includes resampling the
     500m bands to match the higher 250m resolution, performing appropriate scaling 
     and color balancing, and handling transparency for areas with no valid data.
-    The function creates both standard and expanded versions of the composite.
     
     Parameters:
         qkm_file (str): Path to the QKM (250m) MODIS file
@@ -790,20 +774,8 @@ def create_false_colour_composite(qkm_file, hkm_file, output_filename):
         # Close dataset
         composite_ds = None
         
-        # Create another version with expanded extent if needed
-        expanded_composite_path = os.path.join("./downloads", "expanded_" + output_filename)
-        
-        print("Creating expanded false colour composite with full extent...")
-        gdal.Warp(expanded_composite_path, composite_path, 
-                  format='GTiff',
-                  srcNodata=0,
-                  dstNodata=0,
-                  multithread=True,
-                  resampleAlg=gdal.GRA_NearestNeighbour,
-                  creationOptions=['ALPHA=YES', 'COMPRESS=LZW'])
-        
+
         print(f"False-color composite saved to: {composite_path}")
-        print(f"Expanded false-color composite saved to: {expanded_composite_path}")
         
         # Clean up temporary files
         print("Cleaning up temporary files...")
