@@ -709,6 +709,198 @@ def find_matching_granules(available_images, product_types):
                 break  # Find just one match per QKM image for now
     
     return matches
+    
+def create_multi_band_composite(qkm_file, hkm_file, output_filename):
+    """
+    Create a multi-band composite image using all bands from QKM and HKM MODIS files.
+    
+    This function combines bands from 250m (QKM) and 500m (HKM) MODIS files into 
+    a single multi-band GeoTIFF. It ensures that all bands are:
+    1. Resampled to the highest resolution (250m)
+    2. Scaled consistently
+    3. Preserved with their original spatial and spectral characteristics
+    
+    Parameters:
+        qkm_file (str): Path to the QKM (250m) MODIS file
+        hkm_file (str): Path to the HKM (500m) MODIS file
+        output_filename (str): Filename for the output composite image
+    
+    Returns:
+        str or None: Path to the composite image if successful, None if failed
+    
+    Author: Assistant, based on original function by Alana
+    """
+    try:
+        print("\nCreating multi-band composite image...")
+        
+        # Temporary directory for intermediate processing
+        temp_dir = "./downloads/temp"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Find the actual files in the downloads directory
+        download_files = os.listdir("./downloads")
+        
+        # Find QKM and HKM files with more flexible matching
+        qkm_matches = [f for f in download_files if (f.endswith("_250m.tiff") or f.endswith("_250m.tif")) and 
+                       (os.path.basename(qkm_file) in f or "_QKM" in f)]
+        
+        hkm_matches = [f for f in download_files if (f.endswith("_500m.tiff") or f.endswith("_500m.tif")) and 
+                       (os.path.basename(hkm_file) in f or "_HKM" in f)]
+        
+        # Debugging output
+        print(f"QKM matches found: {qkm_matches}")
+        print(f"HKM matches found: {hkm_matches}")
+        
+        # Validate matches
+        if not qkm_matches or not hkm_matches:
+            print("No matching QKM or HKM files found. Cannot create composite.")
+            return None
+        
+        # Use the first match found
+        qkm_processed = os.path.join("./downloads", qkm_matches[0])
+        hkm_processed = os.path.join("./downloads", hkm_matches[0])
+        
+        print(f"Using QKM file: {qkm_processed}")
+        print(f"Using HKM file: {hkm_processed}")
+        
+        # Open source datasets
+        qkm_ds = gdal.Open(qkm_processed)
+        hkm_ds = gdal.Open(hkm_processed)
+        
+        if qkm_ds is None or hkm_ds is None:
+            print("Failed to open source datasets")
+            return None
+        
+        # Get reference projection and geotransform from QKM (highest resolution)
+        target_proj = qkm_ds.GetProjection()
+        target_geotrans = qkm_ds.GetGeoTransform()
+        target_width = qkm_ds.RasterXSize
+        target_height = qkm_ds.RasterYSize
+        
+        # Count bands in both datasets
+        qkm_band_count = qkm_ds.RasterCount
+        hkm_band_count = hkm_ds.RasterCount
+        
+        print(f"QKM file has {qkm_band_count} bands")
+        print(f"HKM file has {hkm_band_count} bands")
+        
+        # Temporary file for resampled HKM data
+        temp_hkm_resampled = os.path.join(temp_dir, "hkm_resampled.tif")
+        
+        # Resample HKM bands to QKM resolution
+        warp_options = gdal.WarpOptions(
+            format='GTiff',
+            width=target_width,
+            height=target_height,
+            dstSRS=target_proj,
+            outputBounds=(
+                target_geotrans[0], 
+                target_geotrans[3] + target_height * target_geotrans[5],
+                target_geotrans[0] + target_width * target_geotrans[1],
+                target_geotrans[3]
+            ),
+            outputType=gdal.GDT_Float32,
+            resampleAlg=gdal.GRA_Bilinear,
+            multithread=True,
+            dstNodata=np.nan
+        )
+        
+        print("Resampling 500m data to match 250m resolution...")
+        gdal.Warp(temp_hkm_resampled, hkm_processed, options=warp_options)
+        
+        # Open resampled HKM dataset
+        hkm_resampled_ds = gdal.Open(temp_hkm_resampled)
+        
+        # Calculate total number of bands
+        total_bands = qkm_band_count + hkm_band_count
+        
+        # Create output composite dataset
+        composite_path = os.path.join("./downloads", output_filename)
+        driver = gdal.GetDriverByName("GTiff")
+        composite_ds = driver.Create(
+            composite_path, 
+            target_width, 
+            target_height, 
+            total_bands,
+            gdal.GDT_Float32,
+            options=['COMPRESS=LZW']
+        )
+        
+        # Set projection and geotransform
+        composite_ds.SetProjection(target_proj)
+        composite_ds.SetGeoTransform(target_geotrans)
+        
+        # Function to scale array robustly
+        def scale_array(array):
+            # Create a copy to avoid modifying original
+            array_copy = array.copy()
+            
+            # Create mask for valid data
+            valid_mask = ~np.isnan(array_copy) & (array_copy > 0)
+            
+            if np.sum(valid_mask) > 0:
+                # Get percentiles from valid data only
+                low_val = np.percentile(array_copy[valid_mask], 2)
+                high_val = np.percentile(array_copy[valid_mask], 98)
+                
+                # Scale valid data
+                array_copy[valid_mask] = np.clip(
+                    (array_copy[valid_mask] - low_val) / (high_val - low_val), 
+                    0, 1
+                )
+                
+                # Set invalid data to 0
+                array_copy[~valid_mask] = 0
+            else:
+                # If no valid data, return zeros
+                array_copy = np.zeros_like(array_copy)
+            
+            return array_copy
+        
+        # Copy QKM bands first
+        print("Processing QKM bands...")
+        for i in range(qkm_band_count):
+            band_array = qkm_ds.GetRasterBand(i+1).ReadAsArray()
+            scaled_array = scale_array(band_array)
+            composite_ds.GetRasterBand(i+1).WriteArray(scaled_array)
+            composite_ds.GetRasterBand(i+1).SetDescription(f"QKM Band {i+1}")
+        
+        # Copy HKM bands next
+        print("Processing HKM bands...")
+        for i in range(hkm_band_count):
+            band_array = hkm_resampled_ds.GetRasterBand(i+1).ReadAsArray()
+            scaled_array = scale_array(band_array)
+            composite_ds.GetRasterBand(qkm_band_count + i+1).WriteArray(scaled_array)
+            composite_ds.GetRasterBand(qkm_band_count + i+1).SetDescription(f"HKM Band {i+1}")
+        
+        # Close all datasets
+        composite_ds = None
+        qkm_ds = None
+        hkm_ds = None
+        hkm_resampled_ds = None
+        
+        print(f"Multi-band composite saved to: {composite_path}")
+        print(f"Total bands in composite: {total_bands}")
+        
+        # Clean up temporary files
+        print("Cleaning up temporary files...")
+        for file in os.listdir(temp_dir):
+            try:
+                os.remove(os.path.join(temp_dir, file))
+            except:
+                pass
+        try:
+            os.rmdir(temp_dir)
+        except:
+            pass
+        
+        return composite_path
+        
+    except Exception as e:
+        print(f"Error creating multi-band composite: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 if __name__ == "__main__":
     """
@@ -725,14 +917,14 @@ if __name__ == "__main__":
     # Verify credentials first
     auth = verify_credentials()
     
-    # Prince of Wales Island centered bounding box
+    # Ottawa centered bounding box
     aoi = {
-        'min_lon': -100.0,  # Western boundary
-        'min_lat': 72.0,    # Southern boundary
-        'max_lon': -97.0,   # Eastern boundary
-        'max_lat': 73.0     # Northern boundary
+        'min_lon': -76.0,  # Western boundary
+        'min_lat': 45.2,   # Southern boundary
+        'max_lon': -75.3,  # Eastern boundary
+        'max_lat': 45.6    # Northern boundary
     }
-    
+
     print("\nSearching for available imagery...")
     # Use "both" to download both QKM (250m) and HKM (500m) resolution images
     available_images, product_types = get_modis_imagery(**aoi, resolution="both")
@@ -767,7 +959,7 @@ if __name__ == "__main__":
             
             # Create true color composite
             composite_output = f"prince_of_wales_truecolor_{i+1}.tiff"
-            create_true_color_composite(qkm_hdf_file, hkm_hdf_file, composite_output)
+            create_multi_band_composite(qkm_processed_file, hkm_processed_file, composite_output)
         
         # Clean up after all processing is complete
         cleanup_files(keep_original=False)
