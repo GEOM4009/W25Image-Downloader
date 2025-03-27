@@ -12,20 +12,12 @@ gdal.DontUseExceptions()
 
 
 def main():
-        """
-    Main execution block for Arctic Image Downloader.
     
-    This script downloads and processes MODIS imagery for the Arctic region,
-    specifically focusing on Prince of Wales Island. It handles downloading both
-    250m (QKM) and 500m (HKM) resolution imagery, processes them into the
-    Arctic Polar Stereographic projection, and creates composites
-    when matching image pairs are available.
-    """
 ###############################################################################################
 
     # ENTER LOGIN FOR NASA EARTHDATA HERE:
-    Username = " "
-    Password = " "
+    Username = "alanaa09"
+    Password = "kidrauhL112!"
         
     
     # ENTER COORDINATES FOR AREA OF INTEREST HERE:
@@ -40,55 +32,96 @@ def main():
 
 ##################################################################################################
 
-    verify_credentials(Username,Password)
-
-    # Use "both" to download both QKM (250m) and HKM (500m) resolution images
+    verify_credentials(Username,Password)    
+ 
+    print("\nSearching for available imagery...")
+     # Use "both" to download both QKM (250m) and HKM (500m) resolution images
     available_images, product_types = get_modis_imagery(**aoi, resolution="both")
-    
-    # Find matching QKM and HKM granules for true color composites
-    matching_pairs = find_matching_granules(available_images, product_types)
-    
+     
+     # Find matching QKM and HKM granules for composites
+     # Instead of using the removed find_matching_granules function, we do it directly here
+    print("\nFinding matching QKM/HKM granule pairs for composite images...")
+    matching_pairs = []
+     
+     # Get indices of QKM and HKM images
+    qkm_indices = [i for i, pt in enumerate(product_types) if "QKM" in pt]
+    hkm_indices = [i for i, pt in enumerate(product_types) if "HKM" in pt]
+     
+     # Match by satellite (Terra or Aqua)
+    for qkm_idx in qkm_indices:
+        qkm_type = product_types[qkm_idx]
+        satellite = "MOD" if "MOD" in qkm_type else "MYD"
+         
+        for hkm_idx in hkm_indices:
+             hkm_type = product_types[hkm_idx]
+             
+             # Check if from same satellite
+             if satellite in hkm_type:
+                 # Found a matching pair
+                 matching_pairs.append((qkm_idx, hkm_idx))
+                 break  # Find just one match per QKM image
+     
     if matching_pairs:
-        
-        # Process all available images and keep track of downloaded files
-        downloaded_files = {}  # Store paths to downloaded files by granule index
-        
-        # First, download all needed granules
-        for i, (qkm_idx, hkm_idx) in enumerate(matching_pairs):
-            # Download QKM file
-            qkm_granule = available_images[qkm_idx]
-            qkm_output = f"prince_of_wales_image_{i+1}_QKM.tiff"
-            qkm_hdf_file, qkm_processed_file = download_and_process_image(
-                qkm_granule, qkm_output, product_types[qkm_idx]
-            )
-            downloaded_files[qkm_idx] = qkm_hdf_file
-            
-            # Download HKM file
-            hkm_granule = available_images[hkm_idx]
-            hkm_output = f"prince_of_wales_image_{i+1}_HKM.tiff"
-            hkm_hdf_file, hkm_processed_file = download_and_process_image(
-                hkm_granule, hkm_output, product_types[hkm_idx]
-            )
-            downloaded_files[hkm_idx] = hkm_hdf_file
-            
-            # Create true color composite
-            composite_output = f"prince_of_wales_truecolor_{i+1}.tiff"
-            create_multi_band_composite(qkm_processed_file, hkm_processed_file, composite_output)
-        
-        # Clean up after all processing is complete
-        cleanup_files(keep_original=False)
-        
-        
-        # Process all available images
-        for idx, (image, product_type) in enumerate(zip(available_images, product_types)):
+         print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for composite images")
+         
+         # Process all available images and keep track of downloaded files
+         downloaded_files = {}  # Store paths to downloaded files by granule index
+         
+         # First, download all needed granules
+         print("\nDownloading all necessary granules...")
+         for i, (qkm_idx, hkm_idx) in enumerate(matching_pairs):
+             # Download QKM file
+             qkm_granule = available_images[qkm_idx]
+             qkm_output = f"prince_of_wales_image_{i+1}_QKM.tiff"
+             qkm_hdf_file, qkm_processed_file = download_and_process_image(
+                 qkm_granule, qkm_output, product_types[qkm_idx]
+             )
+             downloaded_files[qkm_idx] = qkm_hdf_file
+             
+             # Download HKM file
+             hkm_granule = available_images[hkm_idx]
+             hkm_output = f"prince_of_wales_image_{i+1}_HKM.tiff"
+             hkm_hdf_file, hkm_processed_file = download_and_process_image(
+                 hkm_granule, hkm_output, product_types[hkm_idx]
+             )
+             downloaded_files[hkm_idx] = hkm_hdf_file
+             
+             # Create multi-band composite
+             composite_output = f"prince_of_wales_composite_{i+1}.tiff"
+             create_multi_band_composite(qkm_processed_file, hkm_processed_file, composite_output)
+         
+         # Clean up after all processing is complete
+         cleanup_files(keep_original=False)
+         
+         # Report on remaining files
+         tiff_files = glob.glob('./downloads/*.tiff') + glob.glob('./downloads/*.tif')
+         print(f"\nProcessing complete. {len(tiff_files)} TIFF files remain:")
+         for tiff in tiff_files:
+             print(f"- {os.path.basename(tiff)}")
+     
+    elif available_images:
+         print("\nFound individual images but no matching QKM/HKM pairs for composites.")
+         print("Will process individual images instead...")
+         
+         # Process all available images
+         print(f"\nFound {len(available_images)} images. Processing all...")
+         for idx, (image, product_type) in enumerate(zip(available_images, product_types)):
+             print(f"\nProcessing image {idx + 1} of {len(available_images)}...")
+             # Base filename without resolution - resolution will be added in the function
+             output_filename = f"prince_of_wales_image_{idx + 1}.tiff"
+             download_and_process_image(image, output_filename, product_type)
+         
+         # Clean up after all processing is complete
+         cleanup_files()
+         
+         # Report on remaining files
+         tiff_files = glob.glob('./downloads/*.tiff') + glob.glob('./downloads/*.tif')
+         print(f"\nProcessing complete. {len(tiff_files)} TIFF files remain:")
+         for tiff in tiff_files:
+             print(f"- {os.path.basename(tiff)}")
+    else:
+         print("\nNo images available to process.")
 
-            # Base filename without resolution - resolution will be added in the function
-            output_filename = f"prince_of_wales_image_{idx + 1}.tiff"
-            download_and_process_image(image, output_filename, product_type)
-        
-        # Clean up after all processing is complete
-        cleanup_files()
-        
 
 
 
@@ -110,7 +143,6 @@ def verify_credentials(Username,Password):
     """
     try:
         print("Attempting to authenticate with NASA Earthdata...")
-        auth = earthaccess.login()
         
         # Test authentication by trying to search (this will fail if auth is invalid)
         test_search = earthaccess.search_data(
@@ -121,7 +153,6 @@ def verify_credentials(Username,Password):
             )
         )
         print("✓ Successfully authenticated with NASA Earthdata!")
-        return auth
     except Exception as e:
         print("✗ Authentication failed!")
         print("Error:", str(e))
