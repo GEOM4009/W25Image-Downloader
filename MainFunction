@@ -1,0 +1,71 @@
+def main():
+
+###############################################################################################
+
+    # ENTER LOGIN FOR NASA EARTHDATA HERE:
+    Username = " "
+    Password = " "
+        
+    
+    # ENTER COORDINATES FOR AREA OF INTEREST HERE:
+        #example: aoi = {'min_lon': -76.0 , 'min_lat': 45.2, 'max_lon': -75.3, 'max_lat':45.6}
+
+    aoi = {
+        'min_lon': -76.0,  # Western boundary
+        'min_lat': 45.2,   # Southern boundary
+        'max_lon': -75.3,  # Eastern boundary
+        'max_lat': 45.6    # Northern boundary
+    }
+
+
+##################################################################################################
+
+    verify_credentials(Username,Password)
+
+    # Use "both" to download both QKM (250m) and HKM (500m) resolution images
+    available_images, product_types = get_modis_imagery(**aoi, resolution="both")
+    
+    # Find matching QKM and HKM granules for true color composites
+    matching_pairs = find_matching_granules(available_images, product_types)
+    
+    if matching_pairs:
+        
+        # Process all available images and keep track of downloaded files
+        downloaded_files = {}  # Store paths to downloaded files by granule index
+        
+        # First, download all needed granules
+        for i, (qkm_idx, hkm_idx) in enumerate(matching_pairs):
+            # Download QKM file
+            qkm_granule = available_images[qkm_idx]
+            qkm_output = f"prince_of_wales_image_{i+1}_QKM.tiff"
+            qkm_hdf_file, qkm_processed_file = download_and_process_image(
+                qkm_granule, qkm_output, product_types[qkm_idx]
+            )
+            downloaded_files[qkm_idx] = qkm_hdf_file
+            
+            # Download HKM file
+            hkm_granule = available_images[hkm_idx]
+            hkm_output = f"prince_of_wales_image_{i+1}_HKM.tiff"
+            hkm_hdf_file, hkm_processed_file = download_and_process_image(
+                hkm_granule, hkm_output, product_types[hkm_idx]
+            )
+            downloaded_files[hkm_idx] = hkm_hdf_file
+            
+            # Create true color composite
+            composite_output = f"prince_of_wales_truecolor_{i+1}.tiff"
+            create_multi_band_composite(qkm_processed_file, hkm_processed_file, composite_output)
+        
+        # Clean up after all processing is complete
+        cleanup_files(keep_original=False)
+        
+        
+        # Process all available images
+        for idx, (image, product_type) in enumerate(zip(available_images, product_types)):
+
+            # Base filename without resolution - resolution will be added in the function
+            output_filename = f"prince_of_wales_image_{idx + 1}.tiff"
+            download_and_process_image(image, output_filename, product_type)
+        
+        # Clean up after all processing is complete
+        cleanup_files()
+        
