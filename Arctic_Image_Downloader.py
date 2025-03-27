@@ -245,341 +245,6 @@ def download_and_process_image(granule, output_filename, product_type):
     # Return the HDF file path for later cleanup
     return hdf_file, resolution_output_filename
 
-def extract_band_from_hdf(hdf_file, band_name, band_index, output_file):
-    """
-    Extract a specific band from an HDF file.
-    
-    This function extracts a single band from a MODIS HDF file subdataset,
-    creating a standalone GeoTIFF file. The function preserves geospatial 
-    information from the source dataset when available.
-    
-    Parameters:
-        hdf_file (str): Path to the HDF file
-        band_name (str): Name of the subdataset (e.g., "EV_250_RefSB" or "EV_500_RefSB")
-        band_index (int): The 0-based index of the band within the subdataset
-        output_file (str): Path to save the extracted band
-    
-    Returns:
-        str or None: Path to the output file if successful, None if failed
-    
-    Author: Alana
-    """
-    try:
-        # Open the HDF file
-        hdf_dataset = gdal.Open(hdf_file)
-        
-        if hdf_dataset is None:
-            print(f"Failed to open HDF file: {hdf_file}")
-            return None
-        
-        # Find the subdataset
-        subdatasets = hdf_dataset.GetSubDatasets()
-        subdataset_path = None
-        
-        for subdataset in subdatasets:
-            if band_name in subdataset[0]:
-                subdataset_path = subdataset[0]
-                break
-        
-        if subdataset_path is None:
-            print(f"Subdataset {band_name} not found in {hdf_file}")
-            return None
-        
-        # Open the subdataset
-        subdataset = gdal.Open(subdataset_path)
-        
-        # Get the band
-        band_array = subdataset.GetRasterBand(band_index + 1).ReadAsArray()
-        
-        # Create a dataset for the band
-        driver = gdal.GetDriverByName("GTiff")
-        out_dataset = driver.Create(
-            output_file, 
-            subdataset.RasterXSize, 
-            subdataset.RasterYSize, 
-            1, 
-            gdal.GDT_Float32
-        )
-        
-        # Set geotransform and projection from subdataset if available
-        if subdataset.GetGeoTransform():
-            out_dataset.SetGeoTransform(subdataset.GetGeoTransform())
-        
-        if subdataset.GetProjection():
-            out_dataset.SetProjection(subdataset.GetProjection())
-        
-        # Write the band data
-        out_dataset.GetRasterBand(1).WriteArray(band_array)
-        
-        # Close datasets
-        out_dataset = None
-        subdataset = None
-        hdf_dataset = None
-        
-        return output_file
-        
-    except Exception as e:
-        print(f"Error extracting band: {str(e)}")
-        return None
-
-def create_true_color_composite(qkm_file, hkm_file, output_filename):
-    """
-    Create a true-color composite image using bands from QKM and HKM MODIS files.
-    
-    This function combines 250m (red band) and 500m (green, blue bands) MODIS data
-    to create a true-color composite image. The process includes resampling the
-    500m bands to match the higher 250m resolution, performing appropriate scaling 
-    and color balancing, and handling transparency for areas with no valid data.
-    The function creates both standard and expanded versions of the composite.
-    
-    Parameters:
-        qkm_file (str): Path to the QKM (250m) MODIS file
-        hkm_file (str): Path to the HKM (500m) MODIS file
-        output_filename (str): Filename for the output composite image
-    
-    Returns:
-        str or None: Path to the composite image if successful, None if failed
-    
-    Author: Alana
-    """
-    try:
-        print("\nCreating true-color composite image...")
-        
-        # Make temporary directory for intermediate files
-        temp_dir = "./downloads/temp"
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # More robust file finding logic
-        qkm_basename = os.path.basename(qkm_file)
-        hkm_basename = os.path.basename(hkm_file)
-        
-        # List all files in downloads directory
-        download_files = os.listdir("./downloads")
-        
-        # Find files with more flexible matching
-        qkm_matches = [f for f in download_files if (f.endswith("_250m.tiff") or f.endswith("_250m.tif")) and 
-                       (qkm_basename in f or (f.startswith("prince_of_wales") and "_QKM" in f))]
-        
-        hkm_matches = [f for f in download_files if (f.endswith("_500m.tiff") or f.endswith("_500m.tif")) and 
-                       (hkm_basename in f or (f.startswith("prince_of_wales") and "_HKM" in f))]
-        
-        # Debug output to help diagnose issues
-        print(f"Looking for QKM file containing '{qkm_basename}' and ending with '_250m.tiff/tif'")
-        print(f"Looking for HKM file containing '{hkm_basename}' and ending with '_500m.tiff/tif'")
-        print(f"Available files in downloads directory: {download_files}")
-        print(f"QKM matches found: {qkm_matches}")
-        print(f"HKM matches found: {hkm_matches}")
-        
-        # Check if we found matching files
-        if not qkm_matches:
-            print("No matching QKM (250m) file found. Cannot create composite.")
-            return None
-            
-        if not hkm_matches:
-            print("No matching HKM (500m) file found. Cannot create composite.")
-            return None
-        
-        # Use the first match found
-        qkm_processed = os.path.join("./downloads", qkm_matches[0])
-        hkm_processed = os.path.join("./downloads", hkm_matches[0])
-        
-        print(f"Using QKM file: {qkm_processed}")
-        print(f"Using HKM file: {hkm_processed}")
-        
-        # Create a common target resolution and extent
-        # Use the processed QKM file as reference for higher resolution
-        reference_ds = gdal.Open(qkm_processed)
-        if reference_ds is None:
-            print(f"Failed to open reference file: {qkm_processed}")
-            return None
-            
-        # Get projection and geotransform from the reference file
-        target_proj = reference_ds.GetProjection()
-        target_geotrans = reference_ds.GetGeoTransform()
-        target_width = reference_ds.RasterXSize
-        target_height = reference_ds.RasterYSize
-        reference_ds = None
-        
-        # Define output path
-        composite_path = os.path.join("./downloads", output_filename)
-        
-        # Create temporary resampled HKM bands at QKM resolution
-        temp_hkm_resampled = os.path.join(temp_dir, "hkm_resampled.tif")
-        
-        # Resample HKM to match QKM resolution and extent
-        # Use bilinear resampling and maintain the entire extent
-        warp_options = gdal.WarpOptions(
-            format='GTiff',
-            width=target_width,
-            height=target_height,
-            dstSRS=target_proj,
-            outputBounds=(
-                target_geotrans[0], 
-                target_geotrans[3] + target_height * target_geotrans[5],
-                target_geotrans[0] + target_width * target_geotrans[1],
-                target_geotrans[3]
-            ),
-            outputType=gdal.GDT_Float32,
-            resampleAlg=gdal.GRA_Bilinear,
-            multithread=True,
-            dstNodata=np.nan  # Use NaN for nodata to handle transparency better
-        )
-        
-        print("Resampling 500m data to match 250m resolution...")
-        gdal.Warp(temp_hkm_resampled, hkm_processed, options=warp_options)
-        
-        # Create output dataset for the composite with alpha channel
-        driver = gdal.GetDriverByName("GTiff")
-        composite_ds = driver.Create(
-            composite_path, 
-            target_width, 
-            target_height, 
-            4,  # 4 bands: R, G, B, and Alpha
-            gdal.GDT_Byte,
-            options=['ALPHA=YES', 'COMPRESS=LZW']  # Add alpha channel and compression
-        )
-        
-        # Set projection and geotransform
-        composite_ds.SetProjection(target_proj)
-        composite_ds.SetGeoTransform(target_geotrans)
-        
-        # Read bands - QKM file has bands 1-2, HKM file has bands 3-5
-        qkm_ds = gdal.Open(qkm_processed)
-        if qkm_ds is None:
-            print(f"Failed to open QKM file: {qkm_processed}")
-            return None
-        
-        # Check number of bands
-        qkm_band_count = qkm_ds.RasterCount
-        print(f"QKM file has {qkm_band_count} bands")
-        
-        if qkm_band_count >= 1:
-            red_array = qkm_ds.GetRasterBand(1).ReadAsArray()  # Band 1 (red)
-        else:
-            print("QKM file doesn't have enough bands")
-            return None
-        
-        qkm_ds = None
-        
-        hkm_ds = gdal.Open(temp_hkm_resampled)
-        if hkm_ds is None:
-            print(f"Failed to open resampled HKM file: {temp_hkm_resampled}")
-            return None
-        
-        # Check number of bands
-        hkm_band_count = hkm_ds.RasterCount
-        print(f"HKM file has {hkm_band_count} bands")
-        
-        if hkm_band_count >= 2:
-            green_array = hkm_ds.GetRasterBand(2).ReadAsArray()  # Band 4 (green)
-            blue_array = hkm_ds.GetRasterBand(1).ReadAsArray()   # Band 3 (blue)
-        else:
-            print("HKM file doesn't have enough bands")
-            return None
-        
-        hkm_ds = None
-        
-        # Scale values with more robust handling
-        print("Scaling and creating composite...")
-        
-        # Function to scale array with percentile clipping
-        def scale_array(array, low_clip=2, high_clip=98):
-            # Make a copy to avoid modifying the original
-            array_copy = array.copy()
-            
-            # Create mask for valid data
-            valid_mask = ~np.isnan(array_copy) & (array_copy > 0)
-            
-            if np.sum(valid_mask) > 0:
-                # Get percentiles from valid data only
-                low_val = np.percentile(array_copy[valid_mask], low_clip)
-                high_val = np.percentile(array_copy[valid_mask], high_clip)
-                
-                # Apply scaling only to valid data
-                array_copy[valid_mask] = np.clip((array_copy[valid_mask] - low_val) / 
-                                              (high_val - low_val) * 255, 0, 255)
-                
-                # Set invalid data to 0
-                array_copy[~valid_mask] = 0
-                
-            else:
-                # If no valid data, return zeros
-                array_copy = np.zeros_like(array_copy)
-                
-            return array_copy.astype(np.uint8)
-        
-        # Scale each band
-        red_scaled = scale_array(red_array)
-        green_scaled = scale_array(green_array)
-        blue_scaled = scale_array(blue_array)
-        
-        # Create alpha channel based on valid data in all three bands
-        # Pixels with 0 in any band will be transparent
-        alpha_channel = np.ones_like(red_scaled) * 255  # Start with full opacity
-        
-        # Create combined valid data mask
-        valid_data_mask = (red_array > 0) & (green_array > 0) & (blue_array > 0)
-        valid_data_mask = valid_data_mask & ~np.isnan(red_array) & ~np.isnan(green_array) & ~np.isnan(blue_array)
-        
-        # Set alpha to 0 (transparent) for invalid data
-        alpha_channel[~valid_data_mask] = 0
-        
-        # Write bands to composite
-        composite_ds.GetRasterBand(1).WriteArray(red_scaled)
-        composite_ds.GetRasterBand(2).WriteArray(green_scaled)
-        composite_ds.GetRasterBand(3).WriteArray(blue_scaled)
-        composite_ds.GetRasterBand(4).WriteArray(alpha_channel)  # Alpha channel
-        
-        # Set color interpretation
-        composite_ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_RedBand)
-        composite_ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_GreenBand)
-        composite_ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_BlueBand)
-        composite_ds.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand)
-        
-        # Set nodata value
-        composite_ds.GetRasterBand(1).SetNoDataValue(0)
-        composite_ds.GetRasterBand(2).SetNoDataValue(0)
-        composite_ds.GetRasterBand(3).SetNoDataValue(0)
-        
-        # Close dataset
-        composite_ds = None
-        
-        # Create another version with expanded extent if needed
-        # This ensures we get the full area without clipping
-        expanded_composite_path = os.path.join("./downloads", "expanded_" + output_filename)
-        
-        print("Creating expanded composite with full extent...")
-        gdal.Warp(expanded_composite_path, composite_path, 
-          format='GTiff',
-          srcNodata=0,
-          dstNodata=0,
-          multithread=True,
-          resampleAlg=gdal.GRA_NearestNeighbour,
-          creationOptions=['ALPHA=YES', 'COMPRESS=LZW'])
-        
-        print(f"True-color composite saved to: {composite_path}")
-        print(f"Expanded true-color composite saved to: {expanded_composite_path}")
-        
-        # Clean up temporary files
-        print("Cleaning up temporary files...")
-        for file in os.listdir(temp_dir):
-            try:
-                os.remove(os.path.join(temp_dir, file))
-            except:
-                pass
-        try:
-            os.rmdir(temp_dir)
-        except:
-            pass
-        
-        return composite_path
-        
-    except Exception as e:
-        print(f"Error creating true-color composite: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None
-
 def verify_projection(filename):
     """
     Verify the projection of a processed image.
@@ -671,45 +336,6 @@ def cleanup_files(keep_original=False):
     
     print("Cleanup complete!")
 
-def find_matching_granules(available_images, product_types):
-    """
-    Find matching QKM and HKM granules that can be used for true color composites.
-    
-    This function pairs 250m (QKM) and 500m (HKM) granules from the same satellite
-    (Terra or Aqua) that can be combined to create true color composite images.
-    The matching is based on the product type prefixes ("MOD" for Terra and "MYD" 
-    for Aqua) to ensure the granules are from the same satellite pass.
-    
-    Parameters:
-        available_images (list): List of DataGranule objects
-        product_types (list): List of product types corresponding to each granule
-    
-    Returns:
-        list: List of tuples (qkm_index, hkm_index) for matching granules that
-              can be used to create true color composites
-    
-    Author: Alana
-    """
-    matches = []
-    qkm_indices = [i for i, pt in enumerate(product_types) if "QKM" in pt]
-    hkm_indices = [i for i, pt in enumerate(product_types) if "HKM" in pt]
-    
-    # Try to match by satellite (Terra or Aqua) and acquisition time
-    for qkm_idx in qkm_indices:
-        qkm_type = product_types[qkm_idx]
-        satellite = "MOD" if "MOD" in qkm_type else "MYD"
-        
-        for hkm_idx in hkm_indices:
-            hkm_type = product_types[hkm_idx]
-            
-            # Check if from same satellite
-            if satellite in hkm_type:
-                # These are potentially matching granules
-                matches.append((qkm_idx, hkm_idx))
-                break  # Find just one match per QKM image for now
-    
-    return matches
-    
 def create_multi_band_composite(qkm_file, hkm_file, output_filename):
     """
     Create a multi-band composite image using all bands from QKM and HKM MODIS files.
@@ -909,10 +535,8 @@ if __name__ == "__main__":
     This script downloads and processes MODIS imagery for the Arctic region,
     specifically focusing on Prince of Wales Island. It handles downloading both
     250m (QKM) and 500m (HKM) resolution imagery, processes them into the
-    Arctic Polar Stereographic projection, and creates true color composites
+    Arctic Polar Stereographic projection, and creates composites
     when matching image pairs are available.
-    
-    Author: Zack
     """
     # Verify credentials first
     auth = verify_credentials()
@@ -929,11 +553,31 @@ if __name__ == "__main__":
     # Use "both" to download both QKM (250m) and HKM (500m) resolution images
     available_images, product_types = get_modis_imagery(**aoi, resolution="both")
     
-    # Find matching QKM and HKM granules for true color composites
-    matching_pairs = find_matching_granules(available_images, product_types)
+    # Find matching QKM and HKM granules for composites
+    # Instead of using the removed find_matching_granules function, we do it directly here
+    print("\nFinding matching QKM/HKM granule pairs for composite images...")
+    matching_pairs = []
+    
+    # Get indices of QKM and HKM images
+    qkm_indices = [i for i, pt in enumerate(product_types) if "QKM" in pt]
+    hkm_indices = [i for i, pt in enumerate(product_types) if "HKM" in pt]
+    
+    # Match by satellite (Terra or Aqua)
+    for qkm_idx in qkm_indices:
+        qkm_type = product_types[qkm_idx]
+        satellite = "MOD" if "MOD" in qkm_type else "MYD"
+        
+        for hkm_idx in hkm_indices:
+            hkm_type = product_types[hkm_idx]
+            
+            # Check if from same satellite
+            if satellite in hkm_type:
+                # Found a matching pair
+                matching_pairs.append((qkm_idx, hkm_idx))
+                break  # Find just one match per QKM image
     
     if matching_pairs:
-        print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for true color composites")
+        print(f"\nFound {len(matching_pairs)} matching QKM/HKM granule pairs for composite images")
         
         # Process all available images and keep track of downloaded files
         downloaded_files = {}  # Store paths to downloaded files by granule index
@@ -957,8 +601,8 @@ if __name__ == "__main__":
             )
             downloaded_files[hkm_idx] = hkm_hdf_file
             
-            # Create true color composite
-            composite_output = f"prince_of_wales_truecolor_{i+1}.tiff"
+            # Create multi-band composite
+            composite_output = f"prince_of_wales_composite_{i+1}.tiff"
             create_multi_band_composite(qkm_processed_file, hkm_processed_file, composite_output)
         
         # Clean up after all processing is complete
@@ -971,7 +615,7 @@ if __name__ == "__main__":
             print(f"- {os.path.basename(tiff)}")
     
     elif available_images:
-        print("\nFound individual images but no matching QKM/HKM pairs for true color composites.")
+        print("\nFound individual images but no matching QKM/HKM pairs for composites.")
         print("Will process individual images instead...")
         
         # Process all available images
