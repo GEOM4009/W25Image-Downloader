@@ -12,7 +12,15 @@ gdal.DontUseExceptions()
 
 
 def main():
+        """
+    Main execution block for Arctic Image Downloader.
     
+    This script downloads and processes MODIS imagery for the Arctic region,
+    specifically focusing on Prince of Wales Island. It handles downloading both
+    250m (QKM) and 500m (HKM) resolution imagery, processes them into the
+    Arctic Polar Stereographic projection, and creates composites
+    when matching image pairs are available.
+    """
 ###############################################################################################
 
     # ENTER LOGIN FOR NASA EARTHDATA HERE:
@@ -84,7 +92,7 @@ def main():
 
 
 
-def verify_credentials():
+def verify_credentials(Username,Password):
     """
     Verify NASA Earthdata credentials and ensure successful login.
     
@@ -602,13 +610,4 @@ def create_multi_band_composite(qkm_file, hkm_file, output_filename):
         return None
 
 if __name__ == "__main__":
-    """
-    Main execution block for Arctic Image Downloader.
-    
-    This script downloads and processes MODIS imagery for the Arctic region,
-    specifically focusing on Prince of Wales Island. It handles downloading both
-    250m (QKM) and 500m (HKM) resolution imagery, processes them into the
-    Arctic Polar Stereographic projection, and creates composites
-    when matching image pairs are available.
-    """
     main()
