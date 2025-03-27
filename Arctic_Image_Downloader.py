@@ -16,8 +16,8 @@ def main():
 ###############################################################################################
 
     # ENTER LOGIN FOR NASA EARTHDATA HERE:
-    Username = "alanaa09"
-    Password = "kidrauhL112!"
+    Username = ""
+    Password = ""
         
     
     # ENTER COORDINATES FOR AREA OF INTEREST HERE:
