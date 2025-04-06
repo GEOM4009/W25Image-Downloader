@@ -14,7 +14,7 @@ gdal.DontUseExceptions()
 os.environ['EARTHDATA_USERNAME'] = 'username'  # Replace with your actual username
 os.environ['EARTHDATA_PASSWORD'] = 'password'  # Replace with your actual password
 
-# Ottawa centered bounding box
+# Area of Interest Bounding Box
 aoi = {
     'min_lon': -76.0,  # Western boundary
     'min_lat': 45.2,   # Southern boundary
