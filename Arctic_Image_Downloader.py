@@ -10,11 +10,13 @@ import numpy as np
 import glob
 gdal.DontUseExceptions()
 
+###############################
+
 # NASA Earthdata credentials - CHANGE THESE TO YOUR OWN VALUES
 os.environ['EARTHDATA_USERNAME'] = 'username'  # Replace with your actual username
 os.environ['EARTHDATA_PASSWORD'] = 'password'  # Replace with your actual password
 
-# Area of Interest Bounding Box
+# Area of Interest Bounding Box - CHANGE THESE TO YOUR DESIRED COORDINATES
 aoi = {
     'min_lon': -76.0,  # Western boundary
     'min_lat': 45.2,   # Southern boundary
@@ -22,8 +24,24 @@ aoi = {
     'max_lat': 45.6    # Northern boundary
 }
 
+################################
 
 def verify_credentials():
+    """
+    Verify NASA Earthdata credentials and ensure successful login.
+    
+    This function attempts to authenticate with NASA Earthdata using stored
+    credentials and performs a test search to confirm the authentication works.
+    If authentication fails, it provides detailed troubleshooting steps.
+    
+    Returns:
+        earthaccess.Auth: Authenticated earthaccess object
+    
+    Raises:
+        SystemExit: If authentication fails
+    
+    Author: Leo
+    """
     try:
         print("Authenticating with NASA Earthdata...")
         auth = earthaccess.login(strategy='environment')
@@ -43,6 +61,28 @@ def verify_credentials():
 
 
 def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=0.5, resolution="both"):
+    """
+    Get MODIS imagery for a given bounding box and time range.
+    
+    This function searches for MODIS imagery from both Terra and Aqua satellites
+    within the specified geographic area and time window. It supports searching for
+    images at different resolutions based on the user's preference.
+    
+    Parameters:
+        min_lon (float): Minimum longitude (western boundary) of bounding box
+        min_lat (float): Minimum latitude (southern boundary) of bounding box
+        max_lon (float): Maximum longitude (eastern boundary) of bounding box
+        max_lat (float): Maximum latitude (northern boundary) of bounding box
+        hours_ago (int): How far back in time to search for imagery, in hours
+        resolution (str): "QKM" (250m), "HKM" (500m), or "both" to download both resolutions
+    
+    Returns:
+        tuple: (all_results, result_types) where:
+            - all_results: List of DataGranule objects matching the search criteria
+            - result_types: List of product types corresponding to each granule
+    
+    Author: Leo
+    """
     # Calculate time range
     end_time = datetime.datetime.now(UTC)
     start_time = end_time - datetime.timedelta(hours=hours_ago)
@@ -110,6 +150,26 @@ def get_modis_imagery(min_lon, min_lat, max_lon, max_lat, hours_ago=0.5, resolut
 
 
 def download_and_process_image(granule, output_filename, product_type):
+    """
+    Download and process a MODIS image with proper projection for Arctic regions.
+    
+    This function downloads a specified MODIS granule, extracts the relevant
+    subdataset, and reprojects it to an Arctic Polar Stereographic projection 
+    (EPSG:3995) suitable for Arctic region analysis. The process includes 
+    handling geolocation information to ensure accurate spatial representation.
+    
+    Parameters:
+        granule (DataGranule): The DataGranule object to download
+        output_filename (str): The base filename for the output file
+        product_type (str): The product type (e.g., "MOD02QKM", "MYD02HKM")
+    
+    Returns:
+        tuple: (hdf_file, resolution_output_filename) where:
+            - hdf_file: Path to the downloaded HDF file
+            - resolution_output_filename: Path to the processed output file
+    
+    Author: Leo
+    """
     os.makedirs("./downloads", exist_ok=True)
     
     resolution = "unknown"
@@ -194,6 +254,19 @@ def download_and_process_image(granule, output_filename, product_type):
 
 
 def cleanup_files(keep_intermediate=False):
+    """
+    Remove all unnecessary files, keeping only the TIFF files.
+    
+    This function cleans up temporary and intermediate files created during 
+    processing. By default, it removes all HDF files and auxiliary files,
+    keeping only the final TIFF products. This helps manage disk space
+    especially when processing multiple images.
+    
+    Parameters:
+        keep_original (bool): If True, keep original HDF files, otherwise remove them
+    
+    Author: Zack
+    """
     print("Cleaning up temporary files...")
     
     # Remove all HDF files
@@ -237,6 +310,24 @@ def cleanup_files(keep_intermediate=False):
 
 
 def create_multi_band_composite(qkm_file, hkm_file, output_filename, acquisition_time=None):
+    """
+    Create a multi band composite image using bands from QKM and HKM MODIS files.
+    
+    This function combines 250m and 500m MODIS data to create a multi band composite
+    image. The process includes resampling the 500m bands to match the higher 250m resolution, 
+    performing appropriate scaling and color balancing, and handling transparency for areas 
+    with no valid data. 
+    
+    Parameters:
+        qkm_file (str): Path to the QKM (250m) MODIS file
+        hkm_file (str): Path to the HKM (500m) MODIS file
+        output_filename (str): Filename for the output composite image
+    
+    Returns:
+        str or None: Path to the composite image if successful, None if failed
+    
+    Author: Alana
+    """
     try:
         # Generate date-time based filename if acquisition time is provided
         if acquisition_time:
@@ -381,6 +472,17 @@ def create_multi_band_composite(qkm_file, hkm_file, output_filename, acquisition
 
 
 if __name__ == "__main__":
+    """
+    Main execution block for Arctic Image Downloader.
+    
+    This script downloads and processes MODIS imagery for the Arctic region,
+    specifically focusing on Prince of Wales Island. It handles downloading both
+    250m (QKM) and 500m (HKM) resolution imagery, processes them into the
+    Arctic Polar Stereographic projection, and creates true color composites
+    when matching image pairs are available.
+    
+    Author: Zack
+    """
     auth = verify_credentials()
     
     print("Searching for MODIS imagery...")
