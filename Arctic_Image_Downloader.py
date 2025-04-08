@@ -311,12 +311,13 @@ def cleanup_files(keep_intermediate=False):
 
 def create_multi_band_composite(qkm_file, hkm_file, output_filename, acquisition_time=None):
     """
-    Create a multi band composite image using bands from QKM and HKM MODIS files.
+    Create a multi-band composite image using all bands from QKM and HKM MODIS files.
     
-    This function combines 250m and 500m MODIS data to create a multi band composite
-    image. The process includes resampling the 500m bands to match the higher 250m resolution, 
-    performing appropriate scaling and color balancing, and handling transparency for areas 
-    with no valid data. 
+    This function combines bands from 250m (QKM) and 500m (HKM) MODIS files into 
+    a single multi-band GeoTIFF. It ensures that all bands are:
+    1. Resampled to the highest resolution (250m)
+    2. Scaled consistently
+    3. Preserved with their original spatial and spectral characteristics
     
     Parameters:
         qkm_file (str): Path to the QKM (250m) MODIS file
